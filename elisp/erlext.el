@@ -44,6 +44,9 @@
 (defconst erlext-tag-alist
   '((cached     . 67)
     (newFloat   . 70)
+    (newPid     . 88)
+    (newPort    . 89)
+    (newerRef   . 90)
     (smallInt   . 97)
     (int        . 98)
     (float      . 99)                   ;superseded by newFloat
@@ -51,8 +54,8 @@
     (atom_utf8  . 118)
     (smallAtom_utf8  . 119)
     (ref        . 101)                  ;superseded by newRef
-    (port       . 102)
-    (pid        . 103)
+    (port       . 102)                  ;superseded by newPort
+    (pid        . 103)                  ;superseded by newPid
     (smallTuple . 104)
     (largeTuple . 105)
     (null       . 106)
@@ -61,7 +64,7 @@
     (bin        . 109)
     (smallBig   . 110)
     (largeBig   . 111)
-    (newRef     . 114)
+    (newRef     . 114)                  ;superseded by newerRef
     (map        . 116)))
 
 (defconst erlext-max-atom-length 255 "The maximum length of an erlang atom.")
@@ -345,16 +348,16 @@
              (erlext-write4 arity))))
   (mapc 'erlext-write-obj elts))
 (defun erlext-write-pid (node id serial creation)
-  (erlext-write1 (erlext-get-code 'pid))
+  (erlext-write1 (erlext-get-code 'newPid))
   (erlext-write-obj node)
   (erlext-write4 id)
   (erlext-write4 serial)
-  (erlext-write1 creation))
+  (erlext-write4 creation))
 (defun erlext-write-port (node id creation)
-  (erlext-write1 (erlext-get-code 'port))
+  (erlext-write1 (erlext-get-code 'newPort))
   (erlext-write-obj node)
   (erlext-write4 id)
-  (erlext-write1 creation))
+  (erlext-write4 creation))
 (defun erlext-write-ref (node id creation)
   (erlext-write1 (erlext-get-code 'ref))
   (erlext-write-obj node)
@@ -365,6 +368,12 @@
   (erlext-write2 (/ (length id) 4))
   (erlext-write-obj node)
   (erlext-write1 creation)
+  (erlext-writen id))
+(defun erlext-write-newer-ref (node creation id)
+  (erlext-write1 (erlext-get-code 'newerRef))
+  (erlext-write2 (/ (length id) 4))
+  (erlext-write-obj node)
+  (erlext-write4 creation)
   (erlext-writen id))
 
 (defun erlext-write-map (obj)
@@ -411,12 +420,23 @@
       ((bin)        (erlext-read-binary))
       ((null)       nil)
       ((nil)        nil)
+      ((newPid)     (vector erl-tag
+                            'erl-pid
+                            (erlext-read-obj) ; node
+                            (erlext-read4)    ; id
+                            (erlext-read4)    ; serial
+                            (erlext-read4)))  ; creation
       ((pid)        (vector erl-tag
                             'erl-pid
                             (erlext-read-obj) ; node
                             (erlext-read4)    ; id
                             (erlext-read4)    ; serial
                             (erlext-read1)))  ; creation
+      ((newPort)    (vector erl-tag
+                            'erl-port
+                            (erlext-read-obj) ; node
+                            (erlext-read4)    ; id
+                            (erlext-read4)))  ; creation
       ((port)       (vector erl-tag
                             'erl-port
                             (erlext-read-obj) ; node
@@ -428,6 +448,7 @@
                             (erlext-read4)    ; id
                             (erlext-read1)))  ; creation
       ((newRef)     (erlext-read-newref))
+      ((newerRef)   (erlext-read-newerref))
       ((smallBig)   (erlext-read-small-bignum))
       ((largeBig)   (erlext-read-large-bignum))
       ((map)        (erlext-read-map))
@@ -529,6 +550,13 @@
   (let* ((len (erlext-read2))
          (node (erlext-read-obj))
          (creation (erlext-read1))
+         (id (erlext-readn (* 4 len))))
+    (vector erl-tag 'erl-new-ref node creation id)))
+
+(defun erlext-read-newerref ()
+  (let* ((len (erlext-read2))
+         (node (erlext-read-obj))
+         (creation (erlext-read4))
          (id (erlext-readn (* 4 len))))
     (vector erl-tag 'erl-new-ref node creation id)))
 
